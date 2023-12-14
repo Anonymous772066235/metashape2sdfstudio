@@ -6,8 +6,9 @@
 
 import matplotlib.pyplot as plt
 import numpy as np
-from icecream import ic
+import open3d as o3d
 from mpl_toolkits.mplot3d import Axes3D
+from sklearn.linear_model import RANSACRegressor
 
 
 def fit_a_plane(x2, y2, z2):
@@ -56,9 +57,39 @@ def fit_a_plane(x2, y2, z2):
     # x_p, y_p = np.meshgrid(x_p, y_p)
     # z_p = X[0, 0] * x_p + X[1, 0] * y_p + X[2, 0]
     # ax1.plot_wireframe(x_p, y_p, z_p, rstride=10, cstride=10)
-    plt.pause(2)
+    # plt.pause(2)
 
     return [X[0, 0], X[1, 0], X[2, 0]]
+
+
+def fit_a_plane_ransac(x, y, z):
+    # 将x, y, z组合成点云数据
+    point_cloud = np.column_stack((x, y, z))
+
+    # 使用RANSAC拟合最大平面
+    ransac = RANSACRegressor(base_estimator=None,
+                             min_samples=3,
+                             residual_threshold=0.5,
+                             max_trials=100)
+    ransac.fit(point_cloud, point_cloud)
+
+    # 获取最大平面参数
+    inlier_mask = ransac.inlier_mask_
+    outlier_mask = np.logical_not(inlier_mask)
+    coef = ransac.estimator_.coef_
+    intercept = ransac.estimator_.intercept_
+    # 绘制点云
+    plt.scatter(point_cloud[:, 0], point_cloud[:, 1], point_cloud[:, 2], c='b')
+
+    # 绘制平面
+    xx, yy = np.meshgrid(np.linspace(0, 1, 50), np.linspace(0, 1, 50))
+    zz = (-coef[0] * xx - coef[1] * yy - intercept) / coef[2]
+    plt.contour(xx, yy, zz, colors='r')
+
+    plt.show()
+    # 打印平面参数和误差点数量
+    print("Plane Equation: {}x + {}y + {}z + {} = 0".format(*coef, intercept))
+    print("Number of outliers: ", len(point_cloud[outlier_mask]))
 
 
 def get_normal_vector(point1, point2, point3):
@@ -69,13 +100,13 @@ def get_normal_vector(point1, point2, point3):
     return norm_vect
 
 
-def get_R_matrix( vector_src, vector_tgt):
+def get_R_matrix(vector_src, vector_tgt):
     """计算两平面(法向量)间的旋转矩阵"""
-    vector_src  =  vector_src / np.linalg.norm( vector_src)
-    vector_tgt =  vector_tgt / np.linalg.norm( vector_tgt)
+    vector_src = vector_src / np.linalg.norm(vector_src)
+    vector_tgt = vector_tgt / np.linalg.norm(vector_tgt)
 
-    c = np.dot( vector_src,  vector_tgt)
-    n_vector = np.cross( vector_src,  vector_tgt)
+    c = np.dot(vector_src, vector_tgt)
+    n_vector = np.cross(vector_src, vector_tgt)
 
     n_vector_invert = np.array((
         [0, -n_vector[2], n_vector[1]],
@@ -85,9 +116,10 @@ def get_R_matrix( vector_src, vector_tgt):
     I = np.eye(3)
     R_w2c = I + n_vector_invert + np.dot(n_vector_invert, n_vector_invert) / (1 + c)
     return R_w2c
-    
 
-def plot_linear_cube(poses=[], poses_new=[], x=-1, y=-1, z=-1, dx=2, dy=2, dz=2, color="black",pts=np.array([[0,0,0]])):
+
+def plot_linear_cube_old(poses=[], poses_new=[], x=-1, y=-1, z=-1, dx=2, dy=2, dz=2, color="black",
+                         pts=np.array([[0, 0, 0]])):
     fig = plt.figure()
     ax = Axes3D(fig)
 
@@ -139,21 +171,84 @@ def plot_linear_cube(poses=[], poses_new=[], x=-1, y=-1, z=-1, dx=2, dy=2, dz=2,
 
     ax.set_box_aspect([ub - lb for lb, ub in (getattr(ax, f'get_{a}lim')() for a in 'xyz')])
 
-    if len(pts)>1:
-        ax.scatter(pts[:,0], pts[:,1], pts[:,2], marker=".")
+    if len(pts) > 1:
+        ax.scatter(pts[:, 0], pts[:, 1], pts[:, 2], marker=".")
     else:
-        center=np.mean(pts[:,:3],axis=0)
-        ax.scatter(center[0],center[1],center[2],marker="o",c="purple")
+        center = np.mean(pts[:, :3], axis=0)
+        ax.scatter(center[0], center[1], center[2], marker="o", c="purple")
 
     # plt.pause(2)
     plt.show()
 
 
-def scene_lookdown(poses, center_tgt=np.array([0, 0, 1]),scale=2):
+def plot_linear_cube(poses=[], poses_new=[], x=-1, y=-1, z=-1, dx=2, dy=2, dz=2, color="black",
+                     pts=np.array([[0, 0, 0]])):
+    # 创建一个可视化对象
+    vis = o3d.visualization.Visualizer()
+    vis.create_window()
+
+    # 创建一个坐标框
+    bounding_box = o3d.geometry.AxisAlignedBoundingBox(min_bound=[x, y, z], max_bound=[x + dx, y + dy, z + dz])
+    box = bounding_box.get_axis_aligned_bounding_box()
+    box.color = np.array([0, 0, 0])
+    vis.add_geometry(box)
+
+    # 创建一个坐标框
+    coordinate_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(
+        size=0.2, origin=[0, 0, 0])
+    # 将坐标框添加到可视化窗口
+    vis.add_geometry(coordinate_frame)
+
+    # 添加点云
+    if len(poses) > 0:
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(poses[:, :3, 3])
+        vis.add_geometry(pcd)
+
+    if len(poses_new) > 0:
+        pcd_new = o3d.geometry.PointCloud()
+        pcd_new.points = o3d.utility.Vector3dVector(poses_new[:, :3, 3])
+        pcd_new.paint_uniform_color([1, 0, 0])  # 红色
+        vis.add_geometry(pcd_new)
+
+    # 对于每个位姿，添加一个坐标框
+    scale = 0.1
+    for pose in poses:
+        # 提取位姿的平移和旋转部分
+        t = pose[:3, 3]
+        R = pose[:3, :3]
+
+        # 创建坐标轴
+        for i, color in enumerate([(1, 0, 0), (0, 1, 0), (0, 0, 1)]):  # X:红色，Y:绿色，Z:蓝色
+            # 计算箭头的方向和位置
+            direction = R[:, i]
+            points = [t, t + scale * direction]
+            lines = [[0, 1]]
+            colors = [color for _ in range(len(lines))]
+            line_set = o3d.geometry.LineSet(
+                points=o3d.utility.Vector3dVector(points),
+                lines=o3d.utility.Vector2iVector(lines),
+            )
+            line_set.colors = o3d.utility.Vector3dVector(colors)
+            vis.add_geometry(line_set)
+
+    if len(pts) > 1:
+        pcd_new = o3d.geometry.PointCloud()
+        pcd_new.points = o3d.utility.Vector3dVector(pts)
+        pcd_new.paint_uniform_color([1, 0, 0])  # 红色
+        vis.add_geometry(pcd_new)
+
+    # 运行可视化
+    vis.run()
+    vis.destroy_window()
+
+
+def scene_lookdown(poses, center_tgt=np.array([0, 0, 1]), scale=2):
     # 0. 伴随矩阵，记录变换
     scale_mat = np.eye(4).astype(np.float32)
     # 1. 旋转变换
     # 1.1 拟合平面方程
+    # fit_a_plane_ransac(poses[:, 0, 3], poses[:, 1, 3], poses[:, 2, 3])
     f_p = fit_a_plane(poses[:, 0, 3], poses[:, 1, 3], poses[:, 2, 3])
 
     # 在平面上拿出三个点
@@ -181,7 +276,7 @@ def scene_lookdown(poses, center_tgt=np.array([0, 0, 1]),scale=2):
     p_src[:, 1] = poses[:, 1, 3]
     p_src[:, 2] = poses[:, 2, 3]
 
-    np.savetxt("poses_location.txt",p_src,delimiter=",")
+    # np.savetxt("poses_location.txt",p_src,delimiter=",")
 
     # 再对位置坐标进行旋转变换
     p_new = np.dot(R_w2c, np.transpose(p_src))
@@ -192,20 +287,18 @@ def scene_lookdown(poses, center_tgt=np.array([0, 0, 1]),scale=2):
     poses_new[:, 1, 3] = p_new[1, :]
     poses_new[:, 2, 3] = p_new[2, :]
 
-
     # 1.5 对姿态进行旋转变换，其实就是对三个列向量（坐标轴）进行旋转变换
     poses_new[:, :3, 0] = np.dot(R_w2c, np.transpose(poses_new[:, :3, 0])).transpose()
     poses_new[:, :3, 1] = np.dot(R_w2c, np.transpose(poses_new[:, :3, 1])).transpose()
     poses_new[:, :3, 2] = np.dot(R_w2c, np.transpose(poses_new[:, :3, 2])).transpose()
 
-    scale_mat[:3,:3]=R_w2c
-    if(scale>0):
+    scale_mat[:3, :3] = R_w2c
+    if (scale > 0):
         # 2. 对位置进行缩放变换
         max_vertices = np.max(p_new, axis=1)
         min_vertices = np.min(p_new, axis=1)
         # 这里求的是缩放因子，因为立方体的边长为2
-        scene_scale = scale/ (np.max(max_vertices - min_vertices))
-
+        scene_scale = scale / (np.max(max_vertices - min_vertices))
 
         # 2.1 应用缩放参数
         poses_new[:, :3, 3] *= scene_scale
@@ -214,7 +307,7 @@ def scene_lookdown(poses, center_tgt=np.array([0, 0, 1]),scale=2):
         p_new[2, :] = poses_new[:, 2, 3]
 
         # 伴随矩阵同步记录变换
-        scale_mat[3,3] *= scene_scale
+        scale_mat[3, 3] *= scene_scale
 
     # 3. 对位置进行平移变换
     T_move = np.array([center_tgt - np.mean(p_new, axis=1)])
@@ -231,13 +324,12 @@ def scene_lookdown(poses, center_tgt=np.array([0, 0, 1]),scale=2):
 
     plot_linear_cube(poses, poses_new)
 
-    plot_linear_cube( poses_new)
+    plot_linear_cube(poses_new)
+
+    return poses_new, scale_mat
 
 
-    return poses_new,scale_mat
-
-
-def scene_true(poses, center_tgt=np.array([0, 0, 0]),scale=2):
+def scene_true(poses, center_tgt=np.array([0, 0, 0]), scale=2):
     # 0. 伴随矩阵，记录变换
     scale_mat = np.eye(4).astype(np.float32)
     p_new = np.zeros(shape=(len(poses[:, 0, 3]), 3))
@@ -270,7 +362,6 @@ def scene_true(poses, center_tgt=np.array([0, 0, 0]),scale=2):
         # 伴随矩阵同步记录变换
         scale_mat[3, 3] *= scene_scale
 
-
     # 平移变换
     T_move = np.array([center_tgt - np.mean(p_new, axis=1)])
     p_new = p_new + T_move.transpose()
@@ -281,13 +372,11 @@ def scene_true(poses, center_tgt=np.array([0, 0, 0]),scale=2):
 
     scale_mat[:3, 3] += T_move[0]
 
-
     plot_linear_cube(poses, poses_new)
 
-    plot_linear_cube( poses_new)
+    plot_linear_cube(poses_new)
     # 伴随矩阵，记录变换
-    return poses_new,scale_mat
-
+    return poses_new, scale_mat
 
 
 def poses_transform(poses, center_tgt=np.array([0, 0, 1])):
@@ -356,6 +445,7 @@ def poses_transform(poses, center_tgt=np.array([0, 0, 1])):
     poses_new[:, 2, 3] = p_new[2, :]
 
     return poses_new
+
 
 if __name__ == '__main__':
     pass
