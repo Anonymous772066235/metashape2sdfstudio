@@ -317,7 +317,7 @@ def scene_lookdown(poses, center_tgt=np.array([0, 0, 1]), scale=2):
     poses_new[:, 1, 3] = p_new[1, :]
     poses_new[:, 2, 3] = p_new[2, :]
 
-    np.savetxt("poses_new.txt", p_new.T, delimiter=",")
+    # np.savetxt("poses_new.txt", p_new.T, delimiter=",")
     #
     # 伴随矩阵，记录变换
     scale_mat[:3, 3] += T_move[0]
