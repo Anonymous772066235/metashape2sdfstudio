@@ -204,7 +204,7 @@ class Metashape2Sdfstudio():
         # === Normalize the scene ===
 
         if self.args.scene_type in ["indoor", "object"]:
-            poses_new, scale_mat = pt.scene_true(poses)
+            poses_new, scale_mat = pt.scene_true(poses,np.array(self.args.center_target), self.args.scale_value)
 
         elif self.args.scene_type in ["lookdown"]:
             poses_new, scale_mat = pt.scene_lookdown(poses, np.array(self.args.center_target), self.args.scale_value)
