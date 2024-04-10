@@ -188,7 +188,7 @@ class Metashape2Sdfstudio():
             # load images
             file_path = Path(frame["file_path"])
             img_path = input_dir / file_path.name
-            assert img_path.exists()
+
             image_paths.append(img_path)
 
         poses = self.poses
@@ -204,7 +204,7 @@ class Metashape2Sdfstudio():
         # === Normalize the scene ===
 
         if self.args.scene_type in ["indoor", "object"]:
-            poses_new, scale_mat = pt.scene_true(poses,np.array(self.args.center_target), self.args.scale_value)
+            poses_new, scale_mat = pt.scene_true(poses, np.array(self.args.center_target), self.args.scale_value)
 
         elif self.args.scene_type in ["lookdown"]:
             poses_new, scale_mat = pt.scene_lookdown(poses, np.array(self.args.center_target), self.args.scale_value)
@@ -266,7 +266,6 @@ class Metashape2Sdfstudio():
             if not valid:
                 continue
             out_img_path = output_dir / os.path.basename(image_path)
-            shutil.copy(image_path, out_img_path)
 
             if move_pic:
                 shutil.copy(image_path, out_img_path)
@@ -356,7 +355,7 @@ class Metashape2Sdfstudio():
                 if show:
                     pcd = o3d.geometry.PointCloud()
                     pcd.points = o3d.utility.Vector3dVector(pts)
-                    down_pcd = pcd.uniform_down_sample(1000)
+                    down_pcd = pcd.uniform_down_sample(10)
                     pt.plot_linear_cube(self.poses, pts=np.asarray(down_pcd.points))
         except:
             pass
